@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="manifest.json" />
+  <title>大字语音字幕</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:#fff;color:#111}
+    body{display:flex;flex-direction:column;overflow:hidden}
+    #top{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:#f5f5f5;border-bottom:1px solid #ddd}
+    #status{font-size:18px;font-weight:700}
+    #status.live{color:#d40000}
+    #caption{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;padding:22px;overflow:auto;font-size:72px;font-weight:800;line-height:1.3;word-break:break-word;white-space:pre-wrap}
+    #interim{color:#888}
+    #controls{padding:12px;background:#f7f7f7;border-top:1px solid #ddd}
+    .row{display:flex;gap:10px;margin-bottom:10px}.row:last-child{margin-bottom:0}
+    button{flex:1;min-height:56px;border:0;border-radius:14px;font-size:20px;font-weight:700}
+    #mic{min-height:78px;background:#1677ff;color:#fff;font-size:28px}
+    #mic.live{background:#df2d2d}
+    body.dark{background:#000;color:#fff}
+    body.dark #caption{background:#000}
+    body.dark #top,body.dark #controls{background:#111;border-color:#333}
+    body.dark button{background:#333;color:#fff}
+    body.dark #mic{background:#1677ff}
+    body.dark #mic.live{background:#df2d2d}
+    @media (max-height:600px){#caption{font-size:56px}button{min-height:48px}#mic{min-height:62px}}
+  </style>
+</head>
+<body>
+  <div id="top">
+    <div id="status">准备好了</div>
+    <div id="sizeLabel">72px</div>
+  </div>
+
+  <div id="caption">
+    <div><span id="finalText">点下面的“开始说话”</span><span id="interim"></span></div>
+  </div>
+
+  <div id="controls">
+    <div class="row"><button id="mic">🎤 开始说话</button></div>
+    <div class="row">
+      <button id="smaller">A−</button>
+      <button id="bigger">A+</button>
+      <button id="clear">清空</button>
+    </div>
+    <div class="row">
+      <button id="theme">🌙 黑底</button>
+      <button id="fullscreen">⛶ 全屏</button>
+    </div>
+  </div>
+
+<script>
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const statusEl = document.getElementById('status');
+const finalEl = document.getElementById('finalText');
+const interimEl = document.getElementById('interim');
+const mic = document.getElementById('mic');
+const caption = document.getElementById('caption');
+const sizeLabel = document.getElementById('sizeLabel');
+
+let rec = null, listening = false, finalText = '', wakeLock = null;
+let fontSize = Number(localStorage.getItem('fontSize') || 72);
+
+function setSize(v){
+  fontSize = Math.max(36, Math.min(128, v));
+  caption.style.fontSize = fontSize + 'px';
+  sizeLabel.textContent = fontSize + 'px';
+  localStorage.setItem('fontSize', fontSize);
+}
+setSize(fontSize);
+
+if(localStorage.getItem('dark')==='1'){
+  document.body.classList.add('dark');
+  document.getElementById('theme').textContent='☀️ 白底';
+}
+
+async function lockScreen(){
+  try{
+    if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+  }catch(e){}
+}
+
+function stoppedUI(){
+  statusEl.textContent='已停止';
+  statusEl.classList.remove('live');
+  mic.textContent='🎤 开始说话';
+  mic.classList.remove('live');
+}
+
+if(!SR){
+  finalEl.textContent='这个浏览器暂不支持网页语音识别。\n请换浏览器测试，或改用云端语音识别版本。';
+  statusEl.textContent='浏览器不支持';
+  mic.disabled=true;
+}else{
+  rec = new SR();
+  rec.lang='zh-CN';
+  rec.continuous=true;
+  rec.interimResults=true;
+  rec.maxAlternatives=1;
+
+  rec.onstart=()=>{
+    listening=true;
+    statusEl.textContent='● 正在听';
+    statusEl.classList.add('live');
+    mic.textContent='■ 停止说话';
+    mic.classList.add('live');
+    lockScreen();
+  };
+
+  rec.onresult=(e)=>{
+    let temp='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalText += t;
+      else temp += t;
+    }
+    finalEl.textContent=finalText;
+    interimEl.textContent=temp;
+    caption.scrollTop=caption.scrollHeight;
+  };
+
+  rec.onerror=(e)=>{
+    if(e.error==='not-allowed'){
+      listening=false;
+      statusEl.textContent='请允许麦克风权限';
+      stoppedUI();
+    }else if(e.error==='no-speech'){
+      statusEl.textContent='没有听到声音';
+    }else{
+      statusEl.textContent='识别异常：'+e.error;
+    }
+  };
+
+  rec.onend=()=>{
+    if(listening){
+      try{ rec.start(); }catch(e){}
+    }else stoppedUI();
+  };
+}
+
+mic.onclick=()=>{
+  if(!rec) return;
+  if(!listening){
+    if(finalEl.textContent.includes('点下面的')){ finalText=''; finalEl.textContent=''; }
+    listening=true;
+    try{rec.start();}catch(e){}
+  }else{
+    listening=false;
+    try{rec.stop();}catch(e){}
+    stoppedUI();
+  }
+};
+
+document.getElementById('clear').onclick=()=>{finalText='';finalEl.textContent='';interimEl.textContent='';};
+document.getElementById('bigger').onclick=()=>setSize(fontSize+8);
+document.getElementById('smaller').onclick=()=>setSize(fontSize-8);
+document.getElementById('theme').onclick=()=>{
+  document.body.classList.toggle('dark');
+  const dark=document.body.classList.contains('dark');
+  document.getElementById('theme').textContent=dark?'☀️ 白底':'🌙 黑底';
+  localStorage.setItem('dark',dark?'1':'0');
+};
+document.getElementById('fullscreen').onclick=async()=>{
+  try{
+    if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    else await document.exitFullscreen();
+  }catch(e){}
+};
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&listening) lockScreen();});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "大字语音字幕",
+  "short_name": "大字字幕",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "zh-CN"
+}
